@@ -1,0 +1,228 @@
+package MultiLabelSyntheticDataset;
+
+import java.util.Random;
+
+public class multiLabelDatasetGenerator {
+	private static int numLabel;
+	private static double[][] MI;
+	private static Random rand = new Random();
+	private static double[] P0, newP0;		//probability of 0
+	private static double[][][][] Pjoint, newPjoint;
+		
+	
+	/**
+	 * gets the number of labels and generates the random mutual information matrix within the interval [min, max] 
+	 * @param labelNumber
+	 */
+	public multiLabelDatasetGenerator(int labelNumber, double min, double max){
+		this.numLabel = labelNumber;
+		MI = new double[numLabel][numLabel];
+		
+		for(int i=0; i<labelNumber; i++){
+			for(int j=i+1; j<labelNumber; j++){
+				MI[i][j] = rand.nextDouble()*(max-min)+min;
+			}
+		}
+		
+		P0 = new double[numLabel];
+		newP0 = new double[numLabel];
+		Pjoint = new double[numLabel][numLabel][2][2];
+		newPjoint = new double[numLabel][numLabel][2][2];
+	}
+	
+	
+	/**
+	 * gets the number of labels and target mutual information from input  
+	 * @param labelNumber
+	 * @param mi
+	 */
+	public multiLabelDatasetGenerator(int labelNumber, double[][] mi){
+		this.numLabel = labelNumber;
+		this.MI = mi;
+		P0 = new double[numLabel];
+		newP0 = new double[numLabel];
+		Pjoint = new double[numLabel][numLabel][2][2];
+		newPjoint = new double[numLabel][numLabel][2][2];
+	}
+	
+	
+	public static void probabilityInitialization(){
+		for(int r=0; r<numLabel; r++){
+			newP0[r] = 0.5;
+			for(int c=0; c<numLabel; c++){
+				for(int x=0; x<newPjoint[r][c].length; x++){
+					for(int y=0; y<newPjoint[r][c].length; y++){
+						newPjoint[x][y][x][y] = 0.25;
+					}
+				}
+			}
+		}
+	}
+	
+	
+	/**
+	 * 
+	 * @param args
+	 */
+	public static void main(String[] args) {
+		double delta = 0.05;	//steps in probability change
+		double epsilon = 0.05;	//accepted neighborhood
+		int iteration = 0; 
+		
+		multiLabelDatasetGenerator gen = new multiLabelDatasetGenerator(10, 0.3, 0.6);
+		probabilityInitialization();
+		
+		for(int i=0; i<numLabel; i++){
+			for(int j=i+1; j<numLabel; j++){
+				
+				findDoubleProbs(i, j, epsilon, rand, delta, delta/3, iteration);
+				
+			}
+		}
+		
+	}
+	
+	
+	public static void findDoubleProbs(int l1, int l2,double epsilon, Random r, double delta1, double delta2, int iter){
+		Double curM = calculateMI(newP0, npY, npJ);
+		System.out.println(iter+" : "+curM);
+		if(curM.isNaN())
+			System.exit(1);
+		
+		if(curM < (mi+epsilon) && curM > (mi-epsilon)){
+			System.out.println("Px : "+ npX[0]+" "+npX[1]);
+			System.out.println("Py : "+ npY[0]+" "+npY[1]);
+			System.out.println("Pj : \n"+ npJ[0][0]+" "+npJ[0][1]+"\n"+npJ[1][0]+" "+npJ[1][1]);
+			
+			return;
+		}
+		
+		
+		for(int x=0; x<=1; x++){
+			pX[x] = npX[x];
+			pY[x] = npY[x];
+			for(int y=0; y<=1; y++){
+				pJ[x][y] = npJ[x][y];
+			}
+		}
+		
+		int x = (r.nextDouble() > 0.5) ? 1 : 0;
+		int y = (r.nextDouble() > 0.5) ? 1 : 0;
+				
+		if(curM > (mi+epsilon)){
+			if(probabilityGreaterThanZero(pJ,x,y,delta1, delta2)){
+				npJ[x][y] = pJ[x][y]-delta1;
+				for(int i=0; i<pJ.length; i++){
+					for(int j=0; j<pJ[i].length; j++){
+						if(i != x || j != y)
+							npJ[i][j] = pJ[i][j]+delta2;
+					}
+				}				
+			}else if(probabilityLessThanOne(pJ, x, y, delta1, delta2)){		//if new probability gets negative
+				npJ[x][y] = pJ[x][y]+delta1;
+				for(int i=0; i<pJ.length; i++){
+					for(int j=0; j<pJ[i].length; j++){
+						if(i != x || j != y)
+							npJ[i][j] = pJ[i][j]-delta2;
+					}
+				}
+			}else{
+				System.err.println("current MI is greater than acceptable value but change is not possible!");
+			}
+		}else if(curM < (mi-epsilon)){
+			if(probabilityLessThanOne(pJ, x, y, delta1, delta2)){
+				npJ[x][y] = pJ[x][y]+delta1;
+				for(int i=0; i<pJ.length; i++){
+					for(int j=0; j<pJ[i].length; j++){
+						if(i != x || j != y)
+							npJ[i][j] = pJ[i][j]-delta2;
+					}
+				}
+			}else if(probabilityGreaterThanZero(pJ, x, y, delta1, delta2)){		//if new probability reaches 1
+				npJ[x][y] = pJ[x][y]-delta1;
+				for(int i=0; i<pJ.length; i++){
+					for(int j=0; j<pJ[i].length; j++){
+						if(i != x || j != y)
+							npJ[i][j] = pJ[i][j]+delta2;
+					}
+				}
+			}else{
+				System.err.println("current MI is less than acceptable value but change is not possible!");
+			}
+		}
+		
+		npX[0] = npJ[0][0]+npJ[0][1]; npX[1]= 1-npX[0]; 
+		npY[0] = npJ[0][0]+npJ[1][0]; npY[1]= 1-npY[0]; 
+		
+		findDoubleProbs(mi, epsilon, r, delta1, delta2, iter+1);
+			
+	}
+	
+	/**
+	 * checks whether the subtraction of a delta from one probability and addition to the rest is possible 
+	 * @param x
+	 * @param y
+	 * @param delta1 : the value to be subtracted from the probability
+	 * @param delta2 : the value to be added to the rest
+	 * @return
+	 */
+	public static boolean probabilityGreaterThanZero(double[][] J, int x, int y, double delta1, double delta2){
+		boolean isgreater = true;
+		if(J[x][y] <= delta1)
+			isgreater = false;
+		for(int i=0; i<J.length; i++){
+			for(int j=0; j<J[i].length; j++){
+				if(i != x || j != y){
+					if(J[i][j] >= 1-delta2)
+						isgreater = false;
+				}
+			}
+		}
+		
+		return isgreater;
+	}
+	
+	/**
+	 * checks whether the addition of a delta to one probability and subtraction from the rest is possible 
+	 * @param x
+	 * @param y
+	 * @param delta1 : the value to be subtracted from the probability
+	 * @param delta2 : the value to be added to the rest
+	 * @return
+	 */
+	public static boolean probabilityLessThanOne(double[][] J, int x, int y, double delta1, double delta2){
+		boolean isLess = true;
+		if(J[x][y] >= 1-delta1)
+			isLess = false;
+		for(int i=0; i<J.length; i++){
+			for(int j=0; j<J[i].length; j++){
+				if(i != x || j != y){
+					if(J[i][j] <= delta2)
+						isLess = false;
+				}
+			}
+		}
+		
+		return isLess;
+	}
+	
+	/**
+	 * calculate the mutual information based on the given joint probability and marginals
+	 * @param X
+	 * @param Y
+	 * @param J
+	 * @return
+	 */
+	public static double calculateMI(double[] X, double[] Y, double[][] J){
+		double curMI = 0;
+		
+		for(int x=0; x<J.length; x++){
+			for(int y=0; y<J[x].length; y++){
+				curMI += J[x][y]*Math.log((J[x][y])/((X[x])*(Y[y])));
+			}
+		}
+		
+		return curMI;
+	}
+
+}
